@@ -382,7 +382,7 @@ int main() {
         {MemoryModel::CONCURRENT_ACCESS,   AccessPattern::SEQUENTIAL, DEFAULT_BYTES, N_RUNS},
     };
 
-    std::ofstream csv("jetson_results.csv");
+    std::ofstream csv("unified_4090_results.csv");
     csv << "Run,Label,Alloc_ms,H2D_ms,Kernel_ms,D2H_ms,Total_ms\n";
 
     cudaEvent_t evS, evE;
@@ -433,6 +433,6 @@ int main() {
     csv.close();
     CHECK_CUDA(cudaEventDestroy(evS));
     CHECK_CUDA(cudaEventDestroy(evE));
-    printf("Results written to jetson_results.csv\n");
+    printf("Results written to unified_4090_results.csv\n");
     return 0;
 }

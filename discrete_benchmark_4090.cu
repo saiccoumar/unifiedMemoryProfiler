@@ -313,7 +313,7 @@ int main() {
         {MemoryModel::MANAGED_PREFETCH,    AccessPattern::SEQUENTIAL, OVERSUB_BYTES, N_RUNS},
     };
 
-    std::ofstream csv("discrete_results.csv");
+    std::ofstream csv("discrete_4090_results.csv");
     csv << "Run,Label,Alloc_ms,H2D_ms,Kernel_ms,D2H_ms,Total_ms\n";
 
     cudaEvent_t evS, evE;
@@ -360,6 +360,6 @@ int main() {
     csv.close();
     CHECK_CUDA(cudaEventDestroy(evS));
     CHECK_CUDA(cudaEventDestroy(evE));
-    printf("Results written to discrete_results.csv\n");
+    printf("Results written to discrete_4090_results.csv\n");
     return 0;
 }

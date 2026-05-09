@@ -360,7 +360,7 @@ int main() {
 
     const size_t DEFAULT_BYTES = 12ULL << 30;
     // On Jetson totalGlobalMem == system RAM — cap oversubscription well below physical limit.
-    const size_t OVERSUB_BYTES = (size_t)(props.totalGlobalMem * 0.85);
+    const size_t OVERSUB_BYTES = (size_t)(props.totalGlobalMem * 0.9);
     const int N_RUNS = 30;
 
     const std::vector<BenchmarkConfig> configs = {
@@ -387,7 +387,7 @@ int main() {
         {MemoryModel::CONCURRENT_ACCESS,   AccessPattern::SEQUENTIAL, DEFAULT_BYTES, N_RUNS},
     };
 
-    std::ofstream csv("jetson_results.csv");
+    std::ofstream csv("unified_thor_results.csv");
     csv << "Run,Label,Alloc_ms,H2D_ms,Kernel_ms,D2H_ms,Total_ms\n";
 
     cudaEvent_t evS, evE;
@@ -438,6 +438,6 @@ int main() {
     csv.close();
     CHECK_CUDA(cudaEventDestroy(evS));
     CHECK_CUDA(cudaEventDestroy(evE));
-    printf("Results written to jetson_results.csv\n");
+    printf("Results written to unified_thor_results.csv\n");
     return 0;
 }

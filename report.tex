@@ -1,0 +1,207 @@
+\documentclass{beamer}
+\usepackage{graphicx}      % Provides the floating 
+\usepackage{listings}
+\usepackage{xcolor}
+
+\lstset{
+  basicstyle=\ttfamily\footnotesize,
+  breaklines=true,
+  frame=single
+}
+%Information to be included in the title page:
+\title{Unified Memory Access Profiling}
+\author{Sai Coumar}
+% \institute{Purdue University}
+% \date{2025}
+\usetheme{Madrid}
+
+\begin{document}
+
+\frame{\titlepage}
+
+\begin{frame}
+
+\frametitle{Memory Access Profiling Experiments}
+\begin{itemize}
+    \item A: Host to Device Transfer Baseline  
+    \item B: Paging and Migration Behavior
+    \item C: Access Pattern Sensitivity
+    \item D: Performance under Oversubscription Conditions
+\end{itemize}
+
+\end{frame}
+
+
+\begin{frame}
+\frametitle{A: Memory Access Strategies}
+\begin{itemize}
+    \item Pageable 
+    \item Pinned 
+    \item Zero Copy
+    \item Managed 
+\end{itemize}
+
+\end{frame}
+
+
+\begin{frame}
+\frametitle{A: Pageable Memory Access}
+\begin{itemize}
+    \item Standard Memory Allocation Paradigm
+    \item CPU dynamic allocates in system RAM, GPU allocates VRAM, and kernel performs a memory copy
+    \item OS overhead increases Host-2-Device (H2D) \& Device-2-Host bandwidth (D2H)
+    \item CUDA SDK:
+        \begin{itemize}
+            \item cudaMalloc()
+            \item cudaMemcpy()
+        \end{itemize}
+\end{itemize}
+
+\end{frame}
+
+
+\begin{frame}{A: Pinned Memory Access}
+\begin{itemize}
+    \item Similar paradigm as Pageable Memory Accesses, but pins CPU memory to avoid OS paging in memory
+    \item CPU pins data in physical location in system RAM, GPU allocates VRAM, and kernel performs a memory copy
+    \item No OS overhead in H2D/D2H memory copy
+    \item CUDA SDK:
+        \begin{itemize}
+            \item cudaMallocHost()
+            \item cudaMemcpy()
+        \end{itemize}
+\end{itemize}
+\end{frame}
+
+\begin{frame}{A: Zero-Copy Memory Access}
+\begin{itemize}
+    \item Memory is allocated in system RAM, never copied entirely into GPU VRAM
+    \item GPU Kernel directly accesses memory from system RAM using PCIe
+    \item When memory transfer speeds dominate runtime over compute, adds a bottleneck
+    \item CUDA SDK:
+        \begin{itemize}
+            \item cudaHostAlloc()
+            \item cudaHostAllocMapped
+            \item cudaHostGetDevicePointer()
+        \end{itemize}
+\end{itemize}
+\end{frame}
+
+\begin{frame}{A: Managed Memory Access}
+\begin{itemize}
+    \item Create a virtual shared memory mapping, move data dynamically on demand
+    \item Virtually, ownership bits are changed; Physically depends on the device available 
+    \item Discrete GPU will automatically copy memory from system RAM to GPU VRAM while unified architecture SoC will keep everything in the same place physically and only virtually change ownership
+     \item CUDA SDK:
+        \begin{itemize}
+            \item cudaMallocManaged()
+        \end{itemize}
+\end{itemize}
+\end{frame}
+\begin{frame}{B: Managed Memory Access Paging and Migration Behavior}
+\begin{itemize}
+    \item Managed Memory Allocation with no Prefetch
+    \item Managed Memory Allocation with Prefetch
+    \item Managed Memory Allocation with Thrashing
+\end{itemize}
+\end{frame}
+
+\begin{frame}{B: Managed Memory Allocation with no Prefetch}
+\begin{itemize}
+    \item Normal Managed Memory Allocation 
+    \item Lazy memory placement performed at runtime
+    \item GPU will page fault on first access when data is needed
+    \item CUDA SDK:
+        \begin{itemize}
+            \item cudaMallocManaged()
+        \end{itemize}
+\end{itemize}
+\end{frame}
+
+\begin{frame}{B: Managed Memory Allocation with Prefetch}
+\begin{itemize}
+    \item Managed Memory Allocation with explicit data migration prior to kernel launch  
+    \item Eager memory placement performed prior runtime
+    \item Kernel can utilize defined locality for speedup
+    \item CUDA SDK:
+        \begin{itemize}
+            \item cudaMallocManaged()
+            \item advisePreferGpu()
+        \end{itemize}
+\end{itemize}
+\end{frame}
+
+\begin{frame}{B: Managed Memory Allocation under Thrashing}
+\begin{itemize}
+    \item Normal Managed Memory Allocation but with high H2D transfers within the kernel
+    \item Lazy memory placement but forced to do many memory allocations 
+    \item CUDA SDK:
+        \begin{itemize}
+            \item cudaMallocManaged()
+            \item advisePreferGpu()
+        \end{itemize}
+\end{itemize}
+\end{frame}
+
+
+\begin{frame}
+\frametitle{C: Access Pattern Sensitivity}
+\begin{itemize}
+    \item Sequential Access 
+    \item Sparse Access
+    \item Strided Access
+\end{itemize}
+\end{frame}
+
+\begin{frame}[fragile]{C: Sequential Access}
+\begin{itemize}
+    \item Iterate over every element in contiguous memory
+    \item Best cache reuse conditions
+    \item Ideal bandwidth use
+\end{itemize}
+
+\begin{lstlisting}[language=C++]
+__global__ void k_sequential(float* d, size_t n, float f) {
+    size_t i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n) d[i] *= f;
+}
+\end{lstlisting}
+\end{frame}
+
+\begin{frame}[fragile]{C: Sparse Access}
+\begin{itemize}
+    \item Completely random accesses
+    \item Poor locality
+    \item Triggers many page faults
+\end{itemize}
+
+\begin{lstlisting}[language=C++]
+__global__ void k_sparse(float* d, size_t n, float f) {
+    size_t i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n) {
+        size_t idx = random(i) % n;
+        d[idx] *= f;
+    }
+}
+\end{lstlisting}
+
+\end{frame}
+
+\begin{frame}[fragile]{C: Strided Access}
+\begin{itemize}
+    \item Make jumps in accesses just large enough to trigger cache misses
+    \item Tests sensitivity to non-contiguous accesses
+\end{itemize}
+
+\begin{lstlisting}[language=C++]
+__global__ void k_strided(float* d, size_t n, int stride, float f) {
+    size_t i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i * (size_t)stride < n) d[i * (size_t)stride] *= f;
+}
+\end{lstlisting}
+
+\end{frame}
+
+\bibliographystyle{IEEEtran}   % or plain, unsrt, apalike
+\bibliography{references}
+\end{document}

@@ -3,3 +3,4 @@ discrete_benchmark_thor
 discrete_benchmark_4090
 unified_benchmark_thor
 unified_benchmark_4090
+*.text
