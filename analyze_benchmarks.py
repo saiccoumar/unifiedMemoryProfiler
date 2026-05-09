@@ -74,11 +74,46 @@ LABEL_READABLE = {
 COMMON_LABELS   = list(LABEL_READABLE.keys())[:14]
 UNIFIED_ONLY    = list(LABEL_READABLE.keys())[14:]
 
+# Labels ordered by report experiment section (A → B → C → D)
+LABELS_BY_EXPERIMENT = [
+    # A: Host-to-Device Baseline Strategies
+    "Pageable_Sequential",
+    "Pinned_Sequential",
+    "ZeroCopy_Sequential",
+    # B: Managed Memory Migration Behavior
+    "ManagedNoPrefetch_Sequential",
+    "ManagedPrefetch_Sequential",
+    "ManagedThrashing_Sequential",
+    # C: Access Pattern Sensitivity
+    "Pinned_Strided",
+    "Pinned_Sparse",
+    "ManagedNoPrefetch_Strided",
+    "ManagedNoPrefetch_Sparse",
+    "ManagedPrefetch_Strided",
+    "ManagedPrefetch_Sparse",
+    # D: Oversubscription
+    "ManagedNoPrefetch_Sequential_Oversub",
+    "ManagedPrefetch_Sequential_Oversub",
+]
+
+EXPERIMENT_SECTIONS = [
+    ("A: Baseline\nStrategies",  3),
+    ("B: Migration\nBehavior",   3),
+    ("C: Access\nPatterns",      6),
+    ("D: Over-\nsubscription",   2),
+]
+SECTION_COLORS = ["#FFF3E0", "#E3F2FD", "#E8F5E9", "#FFF9C4"]
+
 plt.rcParams.update({
-    "font.size": 9,
+    "font.size": 11,
     "axes.spines.top": False,
     "axes.spines.right": False,
     "figure.dpi": 150,
+    "axes.titlesize": 12,
+    "axes.labelsize": 11,
+    "xtick.labelsize": 9,
+    "ytick.labelsize": 9,
+    "legend.fontsize": 9,
 })
 
 # ─────────────────────────────── Data loading ─────────────────────────────────
@@ -151,12 +186,34 @@ def grouped_bars(ax, st, labels, col_mean, col_std, title, ylabel,
 # ─────────────────────────────── Figure 1 — Total time ───────────────────────
 
 def fig1_total_time(st):
-    """End-to-end latency: all 14 common memory strategies, 4 conditions, log scale."""
-    fig, ax = plt.subplots(figsize=(17, 6))
-    grouped_bars(ax, st, COMMON_LABELS,
+    """End-to-end latency grouped by report experiment section (A–D), log scale."""
+    fig, ax = plt.subplots(figsize=(14, 5))
+
+    # Section background shading before bars (zorder=0)
+    cumulative = 0
+    for (sec_name, count), bg in zip(EXPERIMENT_SECTIONS, SECTION_COLORS):
+        ax.axvspan(cumulative - 0.5, cumulative + count - 0.5,
+                   alpha=0.22, color=bg, zorder=0)
+        cumulative += count
+
+    grouped_bars(ax, st, LABELS_BY_EXPERIMENT,
                  "Total_mean", "Total_std",
-                 "End-to-End Total Time — All Memory Strategies (all 4 conditions)",
+                 "End-to-End Total Time — All Memory Strategies (Experiments A–D)",
                  "Total Time (ms)", log=True)
+    ax.legend(fontsize=8, framealpha=0.6, loc="lower right")
+
+    # Section labels inside axes at top using transAxes (avoids title overlap)
+    total = len(LABELS_BY_EXPERIMENT)
+    cumulative = 0
+    for (sec_name, count), bg in zip(EXPERIMENT_SECTIONS, SECTION_COLORS):
+        x_frac = (cumulative + count / 2) / total
+        ax.text(x_frac, 0.97, sec_name.replace("\n", " "),
+                transform=ax.transAxes,
+                ha="center", va="top", fontsize=8.5, fontweight="bold", color="#333",
+                bbox=dict(boxstyle="round,pad=0.25", facecolor="white",
+                          alpha=0.80, edgecolor="none"))
+        cumulative += count
+
     fig.tight_layout()
     fig.savefig(DATA_DIR / "fig1_total_time.png")
     plt.close(fig)
@@ -192,11 +249,16 @@ def fig2_kernel_time(st):
 # ─────────────────────────────── Figure 3 — Phase breakdown ──────────────────
 
 def fig3_breakdown(st):
-    """Stacked bars: Alloc / H2D / Kernel / D2H for each condition × 6 key strategies."""
+    """Stacked phase bars — Experiments A (baseline) and B (migration), per condition."""
     key = [
-        "Pinned_Sequential", "ZeroCopy_Sequential",
-        "ManagedNoPrefetch_Sequential", "ManagedPrefetch_Sequential",
-        "ManagedThrashing_Sequential", "ManagedPrefetch_Sequential_Oversub",
+        # Experiment A: baseline strategies
+        "Pageable_Sequential",
+        "Pinned_Sequential",
+        "ZeroCopy_Sequential",
+        # Experiment B: migration behavior
+        "ManagedNoPrefetch_Sequential",
+        "ManagedPrefetch_Sequential",
+        "ManagedThrashing_Sequential",
     ]
     comps = [
         ("Alloc_mean",  "Allocation",    "#95A5A6"),
@@ -205,7 +267,7 @@ def fig3_breakdown(st):
         ("D2H_mean",    "D2H Transfer",  "#27AE60"),
     ]
 
-    fig, axes = plt.subplots(2, 2, figsize=(16, 10), sharey=True)
+    fig, axes = plt.subplots(2, 2, figsize=(14, 8), sharey=True)
     for ax, cond in zip(axes.flat, COND_ORDER):
         k, hw = cond
         x = np.arange(len(key))
@@ -214,15 +276,26 @@ def fig3_breakdown(st):
             vals = np.nan_to_num([get(st, k, hw, l, col) for l in key])
             ax.bar(x, vals, bottom=bottom, label=lbl, color=clr, alpha=0.85)
             bottom += vals
+
+        # Divider between Exp A (idx 0-2) and Exp B (idx 3-5)
+        ax.axvline(x=2.5, color="#888", lw=1.2, ls=":", alpha=0.7, zorder=2)
+        ax.text(1.0, 0.97, "A", transform=ax.get_xaxis_transform(),
+                ha="center", va="top", fontsize=10, fontweight="bold", color="#555",
+                bbox=dict(boxstyle="round,pad=0.2", facecolor="white", alpha=0.8))
+        ax.text(4.0, 0.97, "B", transform=ax.get_xaxis_transform(),
+                ha="center", va="top", fontsize=10, fontweight="bold", color="#555",
+                bbox=dict(boxstyle="round,pad=0.2", facecolor="white", alpha=0.8))
+
         ax.set_xticks(x)
         ax.set_xticklabels([LABEL_READABLE.get(l, l) for l in key],
-                           fontsize=7, rotation=28, ha="right")
-        ax.set_title(COND_NAME[cond], fontweight="bold", fontsize=9)
-        ax.legend(fontsize=7, loc="upper right")
+                           fontsize=8, rotation=28, ha="right")
+        ax.set_title(COND_NAME[cond], fontweight="bold", fontsize=10)
+        ax.legend(fontsize=8, loc="upper right")
         ax.grid(axis="y", ls="--", alpha=0.4)
-    for ax in axes[:, 0]:          # ylabel only on left column
+
+    for ax in axes[:, 0]:
         ax.set_ylabel("Time (ms)")
-    fig.suptitle("Time Phase Breakdown — Key Memory Strategies (per Condition)",
+    fig.suptitle("A & B: Time Phase Breakdown — Baseline & Migration Strategies (per Condition)",
                  fontsize=12, fontweight="bold")
     fig.tight_layout()
     fig.savefig(DATA_DIR / "fig3_time_breakdown.png")
@@ -294,14 +367,14 @@ def fig4_speedup_heatmap(st):
 
 def fig5_kernel_effect(st):
     """
-    For each hardware platform, compare discrete vs. unified kernel performance.
-    Isolates the software contribution independent of hardware.
+    Software kernel effect grouped by report experiment section (A–D).
+    Same hardware, discrete vs. unified kernel — isolates software contribution.
     """
-    fig, axes = plt.subplots(1, 2, figsize=(16, 6))
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5), sharey=True)
 
     for ax, hw in zip(axes, ["4090", "thor"]):
         ratios, bar_colors = [], []
-        for lbl in COMMON_LABELS:
+        for lbl in LABELS_BY_EXPERIMENT:
             d = get(st, "discrete", hw, lbl, "Total_mean")
             u = get(st, "unified",  hw, lbl, "Total_mean")
             r = (d / u) if (not np.isnan(u) and u > 0) else np.nan
@@ -309,28 +382,38 @@ def fig5_kernel_effect(st):
             bar_colors.append("#27AE60" if (r is not None and not np.isnan(r) and r >= 1)
                               else "#C0392B")
 
-        x = np.arange(len(COMMON_LABELS))
+        x = np.arange(len(LABELS_BY_EXPERIMENT))
         ax.bar(x, ratios, color=bar_colors, alpha=0.85, edgecolor="white", lw=0.5)
         ax.axhline(1.0, color="black", lw=1.3, ls="--", label="No difference (1.0×)")
+
+        # Section backgrounds with separator lines
+        cumulative = 0
+        for (sec_name, count), bg in zip(EXPERIMENT_SECTIONS, SECTION_COLORS):
+            ax.axvspan(cumulative - 0.5, cumulative + count - 0.5,
+                       alpha=0.15, color=bg, zorder=0)
+            if cumulative > 0:
+                ax.axvline(x=cumulative - 0.5, color="#999", lw=1.0,
+                           ls=":", alpha=0.7, zorder=1)
+            cumulative += count
 
         # Annotate outliers
         for xi, r in zip(x, ratios):
             if not np.isnan(r) and abs(r - 1) > 0.05:
-                ax.text(xi, r + 0.02, f"{r:.2f}×", ha="center", va="bottom", fontsize=5.5)
+                ax.text(xi, r + 0.02, f"{r:.2f}×", ha="center", va="bottom", fontsize=6)
 
         ax.set_xticks(x)
-        ax.set_xticklabels([LABEL_READABLE.get(l, l) for l in COMMON_LABELS],
-                           fontsize=7, rotation=35, ha="right")
+        ax.set_xticklabels([LABEL_READABLE.get(l, l) for l in LABELS_BY_EXPERIMENT],
+                           fontsize=7.5, rotation=35, ha="right")
         hw_name = "RTX 4090 (Discrete GPU)" if hw == "4090" else "Thor AGX (Unified Memory)"
-        ax.set_title(f"Software Effect on {hw_name}\n"
-                     "Green = Discrete kernel faster  |  Red = Unified kernel faster",
-                     fontsize=9, fontweight="bold")
+        ax.set_title(f"Software Effect on {hw_name}", fontsize=11, fontweight="bold")
         ax.set_ylabel("Total-time ratio: Discrete / Unified kernel")
-        ax.legend(fontsize=8)
+        ax.legend(fontsize=9)
         ax.grid(axis="y", ls="--", alpha=0.4)
 
-    fig.suptitle("Software (Kernel Design) Effect — Same Hardware, Different Kernel",
-                 fontsize=11, fontweight="bold")
+    fig.suptitle(
+        "Software (Kernel Design) Effect — Same Hardware, Different Kernel\n"
+        "Green = Discrete kernel faster  |  Red = Unified kernel faster",
+        fontsize=12, fontweight="bold")
     fig.tight_layout()
     fig.savefig(DATA_DIR / "fig5_kernel_effect.png")
     plt.close(fig)
@@ -341,8 +424,8 @@ def fig5_kernel_effect(st):
 
 def fig6_unified_only(st):
     """
-    Producer-Consumer (D1) and ConcurrentAccess (D2) — only in the unified kernel.
-    These tests exploit the shared physical DRAM of the Thor SoC.
+    Producer-Consumer & Concurrent Access — unified kernel only, log scale.
+    Showcases the CPU↔GPU data-sharing advantage of unified memory SoC architecture.
     """
     sub = st[st.label.isin(UNIFIED_ONLY)]
     if sub.empty:
@@ -350,9 +433,9 @@ def fig6_unified_only(st):
         return
 
     unified_conds = [("unified", "4090"), ("unified", "thor")]
-    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+    fig, axes = plt.subplots(1, 2, figsize=(10, 5))
 
-    for ax, (metric, err, title) in zip(axes, [
+    for ax, (metric, err, ylabel) in zip(axes, [
         ("Kernel_mean", "Kernel_std", "Kernel Execution Time (ms)"),
         ("Total_mean",  "Total_std",  "Total End-to-End Time (ms)"),
     ]):
@@ -365,28 +448,29 @@ def fig6_unified_only(st):
             bars = ax.bar(x + (i - 0.5) * w, vals, w,
                           label=COND_NAME[cond], color=COLORS[cond], alpha=0.85,
                           yerr=errs, capsize=4)
-            # Annotate bar tops with speedup relative to 4090
             if hw == "thor":
                 for xi, (v_thor, bar) in enumerate(zip(vals, bars)):
                     v_4090 = get(sub, k, "4090", UNIFIED_ONLY[xi], metric)
                     if not np.isnan(v_4090) and not np.isnan(v_thor) and v_thor > 0:
                         ratio = v_4090 / v_thor
                         ax.text(bar.get_x() + bar.get_width() / 2,
-                                bar.get_height() * 1.03,
+                                bar.get_height() * 2.0,
                                 f"{ratio:.0f}× faster", ha="center",
-                                va="bottom", fontsize=8, fontweight="bold",
+                                va="bottom", fontsize=9, fontweight="bold",
                                 color="#27AE60")
+
+        ax.set_yscale("log")
         ax.set_xticks(x)
-        ax.set_xticklabels([LABEL_READABLE.get(l, l) for l in UNIFIED_ONLY], fontsize=10)
-        ax.set_ylabel(title)
-        ax.set_title(title, fontweight="bold")
-        ax.legend(fontsize=8)
-        ax.grid(axis="y", ls="--", alpha=0.4)
+        ax.set_xticklabels([LABEL_READABLE.get(l, l) for l in UNIFIED_ONLY], fontsize=11)
+        ax.set_ylabel(ylabel)
+        ax.set_title(ylabel, fontweight="bold", fontsize=11)
+        ax.legend(fontsize=9)
+        ax.grid(axis="y", ls="--", alpha=0.4, which="both")
 
     fig.suptitle(
-        "Unified-Memory-Specific Tests: Producer-Consumer & Concurrent Access\n"
-        "(Only present in unified kernel; test CPU↔GPU data-sharing without explicit copies)",
-        fontsize=10, fontweight="bold")
+        "Unified Memory Advantage: Producer-Consumer & Concurrent Access\n"
+        "CPU↔GPU data-sharing without explicit copies — unified kernel only",
+        fontsize=11, fontweight="bold")
     fig.tight_layout()
     fig.savefig(DATA_DIR / "fig6_unified_only.png")
     plt.close(fig)
